@@ -18,6 +18,7 @@ type Packer struct {
 	Manifest *Manifest
 	Zip      *zip.Writer
 	Buf      *bytes.Buffer
+	Dirs     map[string]struct{}
 }
 
 func (p *Packer) Dest() {
@@ -42,6 +43,7 @@ func (p *Packer) Pack() {
 	color.Blue("Packing %s", p.Manifest.Name)
 	color.Blue("ID: %s, Version: %s", p.Manifest.ID, p.Manifest.Version)
 	p.Buf = new(bytes.Buffer)
+	p.Dirs = make(map[string]struct{})
 	p.Zip = zip.NewWriter(p.Buf)
 	defer p.Zip.Close()
 
@@ -131,6 +133,20 @@ func (p *Packer) WriteFileToZip(name string) error {
 func (p *Packer) WriteDataToZip(name string, data io.Reader) error {
 	name = strings.Replace(name, "\\", "/", -1)
 	name = p.Manifest.ID + "/" + name
+	{ // include directory
+		dirs := filepath.SplitList(path.Dir(name))
+		for i := range len(dirs) {
+			dirName := path.Join(dirs[0:i+1]...) + "/"
+			if _, ok := p.Dirs[dirName]; !ok {
+				p.Dirs[dirName] = struct{}{}
+				if _, err := p.Zip.Create(dirName); err != nil {
+					color.Red("Error creating %s", dirName)
+					color.Red(err.Error())
+					return err
+				}
+			}
+		}
+	}
 	w, err := p.Zip.Create(name)
 	if err != nil {
 		color.Red("Error writing %s", name)
